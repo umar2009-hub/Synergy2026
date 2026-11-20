@@ -3,3 +3,8 @@ dist
 .env
 .DS_Store
 *.local
+photos/
+sample-photos-test/
+photo-upload-report.csv
+missing-photos.csv
+.env.local

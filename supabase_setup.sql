@@ -62,3 +62,48 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.admins;
 INSERT INTO public.admins (name, pin, role, gate, is_active)
 VALUES ('Master Admin', '22568', 'master', 'All Gates', true)
 ON CONFLICT DO NOTHING;
+
+-- ====================================================
+-- 7. STUDENT PHOTO UPLOAD FEATURE MIGRATION
+-- ====================================================
+
+-- Add photo columns to students table if not existing
+ALTER TABLE public.students 
+ADD COLUMN IF NOT EXISTS photo_path TEXT,
+ADD COLUMN IF NOT EXISTS photo_updated_at TIMESTAMPTZ;
+
+-- Create private storage bucket 'student-photos' (Max 200 KB, JPEG only)
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+    'student-photos', 
+    'student-photos', 
+    false, 
+    204800, -- 200 KB in bytes
+    ARRAY['image/jpeg']
+)
+ON CONFLICT (id) DO UPDATE SET
+    public = false,
+    file_size_limit = 204800,
+    allowed_mime_types = ARRAY['image/jpeg'];
+
+-- Storage Security Policies for 'student-photos' bucket
+-- Allow read/download for signed URLs
+CREATE POLICY "Allow read access to student photos" ON storage.objects
+    FOR SELECT TO anon, authenticated
+    USING (bucket_id = 'student-photos');
+
+-- Allow insert/upload into student-photos
+CREATE POLICY "Allow upload to student photos" ON storage.objects
+    FOR INSERT TO anon, authenticated
+    WITH CHECK (bucket_id = 'student-photos');
+
+-- Allow update/replace in student-photos
+CREATE POLICY "Allow update to student photos" ON storage.objects
+    FOR UPDATE TO anon, authenticated
+    USING (bucket_id = 'student-photos');
+
+-- Allow delete from student-photos
+CREATE POLICY "Allow delete from student photos" ON storage.objects
+    FOR DELETE TO anon, authenticated
+    USING (bucket_id = 'student-photos');
+

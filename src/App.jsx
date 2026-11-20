@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback, startTransition } from "react";
 import { createClient } from '@supabase/supabase-js';
 import { FixedSizeList as List } from "react-window";
+import { PhotoAvatar, PhotoLightbox } from './PhotoAvatar.jsx';
+import { compressImage, uploadStudentPhoto, deleteStudentPhoto, countStudentsWithoutPhoto } from './photoUtils.js';
 
 // --- CONFIG ---
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://jujmdykstsmtduclzvqr.supabase.co';
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp1am1keWtzdHNtdGR1Y2x6dnFyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcwMjkyMTIsImV4cCI6MjA5MjYwNTIxMn0.cm1Rly-GO_8Fi3V8O3Csvo9c7SdpSI4AvpYp35LbeNg';
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const S = {
   bg: "#04030a",
@@ -360,39 +362,97 @@ const Icon = {
   ))
 };
 
-const StudentCard = React.memo(({ student, onVerify, onReset, isMaster }) => (
-  <div className="list-item" style={{
-    padding:"18px 40px", borderBottom:`1px solid ${S.borderLight}`, 
-    display:"flex", justifyContent:"space-between", alignItems:"center",
-    height: "100%", width: "100%", boxSizing: "border-box"
-  }}>
-    <div style={{flex:1, minWidth:0}}>
-      <div style={{display:"flex", alignItems:"center", gap:14, flexWrap:"wrap"}}>
-        <div style={{fontWeight:800, fontSize:19, color:S.text, wordBreak:"break-all"}}>{student.name}</div>
-        {student.payment_status !== 'Paid' && <span style={{fontSize:10, background:S.errorBg, color:S.error, padding:"2px 8px", borderRadius:6, fontWeight:900, border:`1px solid ${S.error}33`}}>UNPAID</span>}
+const StudentCard = React.memo(({ 
+  student, 
+  onVerify, 
+  onReset, 
+  isMaster, 
+  onPhotoClick, 
+  onUploadPhoto, 
+  isUploading, 
+  uploadError, 
+  supabase 
+}) => {
+  const fileInputRef = useRef(null);
+
+  return (
+    <div className="list-item" style={{
+      padding:"14px 28px", borderBottom:`1px solid ${S.borderLight}`, 
+      display:"flex", justifyContent:"space-between", alignItems:"center",
+      height: "100%", width: "100%", boxSizing: "border-box", gap: 14
+    }}>
+      <div style={{display:"flex", alignItems:"center", gap:14, flex:1, minWidth:0}}>
+        <PhotoAvatar
+          student={student}
+          onClick={() => onPhotoClick?.(student)}
+          supabase={supabase}
+        />
+        <div style={{flex:1, minWidth:0}}>
+          <div style={{display:"flex", alignItems:"center", gap:10, flexWrap:"wrap"}}>
+            <div style={{fontWeight:800, fontSize:18, color:S.text, wordBreak:"break-all"}}>{student.name}</div>
+            {student.payment_status !== 'Paid' && <span style={{fontSize:10, background:S.errorBg, color:S.error, padding:"2px 8px", borderRadius:6, fontWeight:900, border:`1px solid ${S.error}33`}}>UNPAID</span>}
+          </div>
+          <div style={{fontSize:13, color:S.textMuted, marginTop:4, fontWeight:500}}>
+            {(student.roll_no || student.stud_id || "No ID")} • {student.program} {student.year}yr {student.section && `Sec ${student.section}`}
+          </div>
+          {student.is_verified && <div style={{color:S.success, marginTop:4, fontSize:12, fontWeight:800}}>✦ CLEARED ({student.verified_by?.split('(')[1]?.replace(')','') || 'Gate'})</div>}
+          {uploadError && <div style={{color:S.error, fontSize:11, fontWeight:700, marginTop:4}}>⚠️ {uploadError}</div>}
+        </div>
       </div>
-      <div style={{fontSize:14, color:S.textMuted, marginTop:6, fontWeight:500}}>
-        {(student.roll_no || student.stud_id || "No ID")} • {student.program} {student.year}yr {student.section && `Sec ${student.section}`}
-      </div>
-      {student.is_verified && <div style={{color:S.success, marginTop:8, fontSize:12, fontWeight:800}}>✦ CLEARED ({student.verified_by.split('(')[1]?.replace(')','')})</div>}
-    </div>
-    <div className="list-actions" style={{display:"flex", gap:12, flexShrink:0}}>
-      <button disabled={student.is_verified || student.payment_status !== 'Paid'} onClick={() => onVerify(student)} style={{
-        padding:"12px 24px", borderRadius:14, 
-        background: student.is_verified ? S.successBg : student.payment_status === 'Paid' ? S.gold : "rgba(255,255,255,0.02)", 
-        color: student.is_verified ? S.success : student.payment_status === 'Paid' ? "#000" : S.textDim, 
-        fontWeight:900, fontSize:11, border: student.is_verified ? `1px solid ${S.success}33` : "none"
-      }}>
-        {student.is_verified ? "VERIFIED" : "VERIFY"}
-      </button>
-      {isMaster && student.is_verified && (
-        <button onClick={() => onReset(student.id)} style={{padding:"12px", borderRadius:14, background:S.errorBg, color:S.error, border:`1px solid ${S.error}44`}}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+      <div className="list-actions" style={{display:"flex", gap:8, alignItems:"center", flexShrink:0}}>
+        {isMaster && (
+          <>
+            <button
+              type="button"
+              disabled={isUploading}
+              onClick={() => fileInputRef.current?.click()}
+              style={{
+                padding:"10px 14px", borderRadius:12,
+                background: student.photo_path ? "rgba(244,196,48,0.12)" : "rgba(255,255,255,0.04)",
+                border: `1px solid ${student.photo_path ? 'rgba(244,196,48,0.35)' : 'rgba(255,255,255,0.1)'}`,
+                color: student.photo_path ? S.gold : S.textMuted,
+                fontWeight:800, fontSize:11, cursor: isUploading ? 'not-allowed' : 'pointer',
+                display:"flex", alignItems:"center", gap:6, transition:"all 0.2s"
+              }}
+            >
+              {isUploading ? (
+                <span style={{display:"inline-block", animation:"spin 1s infinite linear"}}>◌</span>
+              ) : (
+                <span>{student.photo_path ? "REPLACE" : "PHOTO"}</span>
+              )}
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              style={{display:"none"}}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  onUploadPhoto?.(student, file);
+                  e.target.value = '';
+                }
+              }}
+            />
+          </>
+        )}
+        <button disabled={student.is_verified || student.payment_status !== 'Paid'} onClick={() => onVerify(student)} style={{
+          padding:"12px 20px", borderRadius:14, 
+          background: student.is_verified ? S.successBg : student.payment_status === 'Paid' ? S.gold : "rgba(255,255,255,0.02)", 
+          color: student.is_verified ? S.success : student.payment_status === 'Paid' ? "#000" : S.textDim, 
+          fontWeight:900, fontSize:11, border: student.is_verified ? `1px solid ${S.success}33` : "none"
+        }}>
+          {student.is_verified ? "VERIFIED" : "VERIFY"}
         </button>
-      )}
+        {isMaster && student.is_verified && (
+          <button onClick={() => onReset(student.id)} style={{padding:"12px", borderRadius:14, background:S.errorBg, color:S.error, border:`1px solid ${S.error}44`}}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+          </button>
+        )}
+      </div>
     </div>
-  </div>
-));
+  );
+});
 
 const AdminCard = React.memo(({ admin, onToggle }) => (
   <div className="list-item" style={{padding:"24px 40px", borderBottom:`1px solid ${S.borderLight}`, display:"flex", justifyContent:"space-between", alignItems:"center"}}>
@@ -407,12 +467,22 @@ const AdminCard = React.memo(({ admin, onToggle }) => (
 ));
 
 const StudentRow = React.memo(({ index, style, data }) => {
-  const { students, onVerify, onReset, isMaster } = data;
+  const { students, onVerify, onReset, isMaster, onPhotoClick, onUploadPhoto, uploadingStudentId, rowError, supabase } = data;
   const student = students[index];
   if (!student) return null;
   return (
     <div style={style}>
-      <StudentCard student={student} onVerify={onVerify} onReset={onReset} isMaster={isMaster} />
+      <StudentCard 
+        student={student} 
+        onVerify={onVerify} 
+        onReset={onReset} 
+        isMaster={isMaster} 
+        onPhotoClick={onPhotoClick}
+        onUploadPhoto={onUploadPhoto}
+        isUploading={uploadingStudentId === student.id}
+        uploadError={rowError?.[student.id]}
+        supabase={supabase}
+      />
     </div>
   );
 });
@@ -422,7 +492,7 @@ const StudentRow = React.memo(({ index, style, data }) => {
 export default function FarewellApp() {
   const [view, setView] = useState("form");
   const [students, setStudents] = useState([]);
-  const [filters, setFilters] = useState({ program: "All", year: "All", section: "All", sort: "name" });
+  const [filters, setFilters] = useState({ program: "All", year: "All", section: "All", sort: "name", photo: "all" });
   const [search, setSearch] = useState("");
   const [admins, setAdmins] = useState([]);
   const [currentAdmin, setCurrentAdmin] = useState(null);
@@ -435,6 +505,13 @@ export default function FarewellApp() {
   const [addForm, setAddForm] = useState({roll_no:"", stud_id:"", name:"", program:"BTech", year:2, section:"A", payment_status:"Paid"});
   const [dbMsg, setDbMsg] = useState("");
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+
+  const [lightboxStudent, setLightboxStudent] = useState(null);
+  const [uploadingStudentId, setUploadingStudentId] = useState(null);
+  const [rowError, setRowError] = useState({});
+  const [enrollPhotoFile, setEnrollPhotoFile] = useState(null);
+  const [enrollPhotoPreview, setEnrollPhotoPreview] = useState(null);
+  const lightboxFileInputRef = useRef(null);
 
   const newAdminRef = useRef({ name: "", pin: "", gate: "Gate-1" });
 
@@ -449,7 +526,9 @@ export default function FarewellApp() {
           payload.old?.is_verified === payload.new?.is_verified &&
           payload.old?.payment_status === payload.new?.payment_status &&
           payload.old?.name === payload.new?.name &&
-          payload.old?.is_active === payload.new?.is_active
+          payload.old?.is_active === payload.new?.is_active &&
+          payload.old?.photo_path === payload.new?.photo_path &&
+          payload.old?.photo_updated_at === payload.new?.photo_updated_at
         ) return;
       }
 
@@ -523,7 +602,10 @@ export default function FarewellApp() {
           (s.year !== undefined && s.year !== null && s.year.toString() === filters.year.toString());
         const matchesSection = filters.section === "All" || 
           (s.section && s.section.toString().trim().toLowerCase() === filters.section.toLowerCase());
-        return matchesSearch && matchesProgram && matchesYear && matchesSection;
+        const matchesPhoto = !filters.photo || filters.photo === "all" ||
+          (filters.photo === "with_photo" && Boolean(s.photo_path)) ||
+          (filters.photo === "missing" && !s.photo_path);
+        return matchesSearch && matchesProgram && matchesYear && matchesSection && matchesPhoto;
       })
       .sort((a, b) => {
         const isEligible = (s) => s.payment_status === "Paid" && !s.is_verified;
@@ -533,6 +615,8 @@ export default function FarewellApp() {
         return res !== 0 ? res : a.name.localeCompare(b.name);
       });
   }, [students, search, filters]);
+
+  const missingPhotoCount = useMemo(() => countStudentsWithoutPhoto(students), [students]);
 
   const fetchData = async () => {
     const [{ data: sData }, { data: aData }] = await Promise.all([
@@ -623,16 +707,71 @@ export default function FarewellApp() {
     await supabase.from('admins').update({ is_active: !status }).eq('id', id);
   }, []);
 
+  const handleUploadRowPhoto = useCallback(async (student, file) => {
+    if (!student?.id || !file) return;
+    setUploadingStudentId(student.id);
+    setRowError(prev => ({ ...prev, [student.id]: null }));
+    try {
+      const { photo_path, photo_updated_at } = await uploadStudentPhoto(supabase, student, file);
+      setStudents(prev => prev.map(s => s.id === student.id ? { ...s, photo_path, photo_updated_at } : s));
+      setLightboxStudent(prev => prev?.id === student.id ? { ...prev, photo_path, photo_updated_at } : prev);
+    } catch (err) {
+      setRowError(prev => ({ ...prev, [student.id]: err.message || 'Upload failed' }));
+      setTimeout(() => {
+        setRowError(prev => ({ ...prev, [student.id]: null }));
+      }, 6000);
+    } finally {
+      setUploadingStudentId(null);
+    }
+  }, []);
+
+  const handleDeleteRowPhoto = useCallback(async (student) => {
+    if (!student?.id) return;
+    try {
+      const { photo_path, photo_updated_at } = await deleteStudentPhoto(supabase, student);
+      setStudents(prev => prev.map(s => s.id === student.id ? { ...s, photo_path, photo_updated_at } : s));
+      setLightboxStudent(prev => prev?.id === student.id ? { ...prev, photo_path, photo_updated_at } : prev);
+    } catch (err) {
+      alert(`Failed to delete photo: ${err.message}`);
+    }
+  }, []);
+
   const handleAddStudent = useCallback(async () => {
-    if ((!addForm.roll_no && !addForm.stud_id) || !addForm.name) { setDbMsg("⚠️ Required fields missing"); return; }
-    const { error } = await supabase.from('students').insert([addForm]);
-    if (error) setDbMsg(`❌ ${error.message}`);
-    else {
+    if ((!addForm.roll_no && !addForm.stud_id) || !addForm.name) { 
+      setDbMsg("⚠️ Required fields missing"); 
+      return; 
+    }
+    const { data: newStudent, error } = await supabase
+      .from('students')
+      .insert([addForm])
+      .select()
+      .single();
+
+    if (error) {
+      setDbMsg(`❌ ${error.message}`);
+      return;
+    }
+
+    if (enrollPhotoFile && newStudent) {
+      try {
+        const { photo_path, photo_updated_at } = await uploadStudentPhoto(supabase, newStudent, enrollPhotoFile);
+        setStudents(prev => prev.map(s => s.id === newStudent.id ? { ...s, photo_path, photo_updated_at } : s));
+        setDbMsg("✨ Student & photo added!");
+      } catch (photoErr) {
+        setDbMsg("Student added, photo failed. Retry from Guest Archive.");
+      }
+    } else {
       setDbMsg("✨ Added to list!");
-      setAddForm({roll_no:"", stud_id:"", name:"", program:"BTech", year:2, section:"A", payment_status:"Paid"});
+    }
+
+    setAddForm({roll_no:"", stud_id:"", name:"", program:"BTech", year:2, section:"A", payment_status:"Paid"});
+    setEnrollPhotoFile(null);
+    if (enrollPhotoPreview) {
+      URL.revokeObjectURL(enrollPhotoPreview);
+      setEnrollPhotoPreview(null);
     }
     setTimeout(() => setDbMsg(""), 4000);
-  }, [addForm]);
+  }, [addForm, enrollPhotoFile, enrollPhotoPreview]);
 
   const handleAddAdmin = useCallback(async () => {
     const { name, pin, gate } = newAdminRef.current;
@@ -669,8 +808,13 @@ export default function FarewellApp() {
     students: filteredStudents,
     onVerify: verifyStudent,
     onReset: resetVerification,
-    isMaster: view === "masterAdmin"
-  }), [filteredStudents, verifyStudent, resetVerification, view]);
+    isMaster: view === "masterAdmin",
+    onPhotoClick: (student) => setLightboxStudent(student),
+    onUploadPhoto: handleUploadRowPhoto,
+    uploadingStudentId,
+    rowError,
+    supabase
+  }), [filteredStudents, verifyStudent, resetVerification, view, handleUploadRowPhoto, uploadingStudentId, rowError]);
 
   const listItemHeight = windowWidth <= 768 ? 160 : 100;
 
@@ -904,8 +1048,20 @@ export default function FarewellApp() {
                         <option value="eligible">Eligible</option>
                         <option value="ineligible">Ineligible</option>
                       </select>
+                      {view === "masterAdmin" && (
+                        <select name="photo" value={filters.photo || "all"} onChange={onFilterChange} style={{borderColor:`${S.gold}44`}}>
+                          <option value="all">Photo: All</option>
+                          <option value="with_photo">With Photo</option>
+                          <option value="missing">Missing</option>
+                        </select>
+                      )}
                     </div>
                   </div>
+                  {view === "masterAdmin" && (
+                    <div style={{ padding: "8px 24px", fontSize: 12, color: S.textMuted, fontWeight: 700, borderBottom: `1px solid ${S.borderLight}`, background: "rgba(0,0,0,0.12)" }}>
+                      <span style={{ color: S.gold, fontWeight: 900 }}>{missingPhotoCount}</span> students without photo
+                    </div>
+                  )}
                   <div style={{flex:1, overflow:"hidden"}} className="scrollbar-hide">
                     {filteredStudents.length > 0 ? (
                       <List
@@ -914,6 +1070,7 @@ export default function FarewellApp() {
                         itemSize={listItemHeight}
                         width="100%"
                         itemData={virtualData}
+                        overscanCount={5}
                         className="scrollbar-hide"
                       >
                         {StudentRow}
@@ -939,7 +1096,61 @@ export default function FarewellApp() {
                      <div><label style={{fontSize:10, color:S.textMuted, fontWeight:900, display:"block", marginBottom:8}}>YEAR</label><select name="year" value={addForm.year} onChange={onAddFormChange}><option value={2}>2</option><option value={3}>3</option></select></div>
                      <div><label style={{fontSize:10, color:S.textMuted, fontWeight:900, display:"block", marginBottom:8}}>SECTION</label><select name="section" value={addForm.section} onChange={onAddFormChange}><option value="A">A</option><option value="B">B</option><option value="C">C</option><option value="D">D</option></select></div>
                    </div>
-                   <div style={{marginBottom:40}}><label style={{fontSize:11, color:S.gold, fontWeight:900, display:"block", marginBottom:10}}>PAYMENT STATUS</label><select name="payment_status" value={addForm.payment_status} onChange={onAddFormChange}><option value="Paid">PAID</option><option value="Not Paid">UNPAID</option></select></div>
+                   <div style={{marginBottom:20}}><label style={{fontSize:11, color:S.gold, fontWeight:900, display:"block", marginBottom:10}}>PAYMENT STATUS</label><select name="payment_status" value={addForm.payment_status} onChange={onAddFormChange}><option value="Paid">PAID</option><option value="Not Paid">UNPAID</option></select></div>
+                   <div style={{marginBottom:32}}>
+                     <label style={{fontSize:11, color:S.gold, fontWeight:900, display:"block", marginBottom:10}}>STUDENT PHOTOGRAPH (OPTIONAL)</label>
+                     <div style={{display:"flex", alignItems:"center", gap:16}}>
+                       {enrollPhotoPreview ? (
+                         <div style={{position:"relative"}}>
+                           <img src={enrollPhotoPreview} alt="Preview" style={{width:56, height:56, borderRadius:14, objectFit:"cover", border:`1px solid ${S.gold}`}} />
+                           <button
+                             type="button"
+                             onClick={() => {
+                               setEnrollPhotoFile(null);
+                               URL.revokeObjectURL(enrollPhotoPreview);
+                               setEnrollPhotoPreview(null);
+                             }}
+                             style={{
+                               position:"absolute", top:-6, right:-6, width:20, height:20,
+                               borderRadius:"50%", background:S.error, border:"none", color:"#fff",
+                               fontSize:11, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center"
+                             }}
+                           >
+                             ✕
+                           </button>
+                         </div>
+                       ) : (
+                         <div style={{
+                           width:56, height:56, borderRadius:14, border:`1px dashed ${S.border}`,
+                           display:"flex", alignItems:"center", justifyContent:"center", color:S.textDim, fontSize:9, fontWeight:700
+                         }}>
+                           NO PHOTO
+                         </div>
+                       )}
+                       <label className="shine-btn" style={{width:"auto", padding:"10px 18px", fontSize:11, cursor:"pointer"}}>
+                         {enrollPhotoPreview ? "CHANGE PHOTO" : "CHOOSE PHOTO"}
+                         <input
+                           type="file"
+                           accept="image/jpeg,image/png,image/webp"
+                           style={{display:"none"}}
+                           onChange={async (e) => {
+                             const file = e.target.files?.[0];
+                             if (file) {
+                               try {
+                                 const compressed = await compressImage(file, { size: 400, quality: 0.82 });
+                                 setEnrollPhotoFile(compressed);
+                                 if (enrollPhotoPreview) URL.revokeObjectURL(enrollPhotoPreview);
+                                 setEnrollPhotoPreview(URL.createObjectURL(compressed));
+                               } catch (err) {
+                                 alert(err.message || "Failed to process photo");
+                               }
+                               e.target.value = '';
+                             }
+                           }}
+                         />
+                       </label>
+                     </div>
+                   </div>
                    {dbMsg && <p style={{color:S.gold, marginBottom:20, textAlign:"center", fontWeight:900, fontSize:14}}>{dbMsg}</p>}
                    <button className="shine-btn" onClick={handleAddStudent}>Commit to Database ✦</button>
                 </div>
@@ -968,6 +1179,33 @@ export default function FarewellApp() {
           </div>
         </div>
       )}
+
+      {lightboxStudent && (
+        <PhotoLightbox
+          student={lightboxStudent}
+          onClose={() => setLightboxStudent(null)}
+          canReplace={view === "masterAdmin"}
+          onReplace={() => {
+            lightboxFileInputRef.current?.click();
+          }}
+          canDelete={view === "masterAdmin"}
+          onDelete={(student) => handleDeleteRowPhoto(student)}
+          supabase={supabase}
+        />
+      )}
+      <input
+        ref={lightboxFileInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        style={{ display: "none" }}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file && lightboxStudent) {
+            handleUploadRowPhoto(lightboxStudent, file);
+            e.target.value = '';
+          }
+        }}
+      />
     </div>
   );
 }
