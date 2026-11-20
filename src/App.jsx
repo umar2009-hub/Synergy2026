@@ -532,14 +532,15 @@ export default function FarewellApp() {
   };
 
   const handleAdminLogin = useCallback(async (manualPin) => {
-    const pinToVerify = manualPin || pinInput;
-    const admin = admins.find(a => a.pin === pinToVerify && a.is_active);
+    const pinToVerify = String(manualPin !== undefined ? manualPin : pinInput).trim();
+    if (!pinToVerify) return;
+    const admin = admins.find(a => String(a.pin).trim() === pinToVerify && a.is_active);
     if (admin) {
       setCurrentAdmin(admin);
       setPinInput("");
       setPinError(false);
       setView(admin.role === "master" ? "masterAdmin" : "subAdmin");
-    } else if (pinToVerify.length >= 5) {
+    } else {
       setPinError(true);
       setPinInput("");
       setTimeout(() => setPinError(false), 500);
@@ -547,10 +548,12 @@ export default function FarewellApp() {
   }, [admins, pinInput]);
 
   useEffect(() => {
-    if (pinInput.length === 5) {
+    if (!pinInput) return;
+    const match = admins.find(a => String(a.pin).trim() === pinInput.trim() && a.is_active);
+    if (match) {
       handleAdminLogin(pinInput);
     }
-  }, [pinInput, handleAdminLogin]);
+  }, [pinInput, admins, handleAdminLogin]);
 
   const handleCheckEligibility = useCallback(async () => {
     const { name, rollNo, studId, useFallback } = form;
@@ -761,19 +764,30 @@ export default function FarewellApp() {
             <h2 className="premium-text" style={{fontSize:32, fontFamily:"'Playfair Display', serif", marginBottom:12, letterSpacing:"0.05em"}}>Security Clearance</h2>
             <p style={{color:S.textDim, fontSize:12, fontWeight:800, letterSpacing:"0.2em", marginBottom:48}}>ACCESSING ENCRYPTED TERMINAL</p>
             
-            <div style={{marginBottom:48, position:"relative"}}>
-              <input 
-                type="password" 
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={5}
-                placeholder="Enter Admin PIN" 
-                className="pin-input"
-                value={pinInput} 
-                onChange={onPinChange}
-                autoFocus
-              />
-            </div>
+            <form onSubmit={(e) => { e.preventDefault(); handleAdminLogin(pinInput); }} style={{marginBottom:32}}>
+              <div style={{marginBottom:24, position:"relative"}}>
+                <input 
+                  type="password" 
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={8}
+                  placeholder="Enter Admin PIN" 
+                  className="pin-input"
+                  value={pinInput} 
+                  onChange={onPinChange}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleAdminLogin(pinInput);
+                    }
+                  }}
+                  autoFocus
+                />
+              </div>
+              <button type="submit" className="shine-btn" style={{padding:"14px 24px", fontSize:13}}>
+                Unlock Terminal ✦
+              </button>
+            </form>
 
             <button onClick={()=>setView("form")} style={{background:"none", border:"none", color:S.textDim, marginTop:12, fontSize:11, fontWeight:900, cursor:"pointer", letterSpacing:"0.15em", transition:"color 0.3s"}}>
               <span style={{opacity:0.5}}>— OR —</span><br/><br/>
