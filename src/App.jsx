@@ -487,6 +487,20 @@ const StudentRow = React.memo(({ index, style, data }) => {
   );
 });
 
+// --- PROGRAM DURATION & YEAR CONFIG ---
+const PROGRAM_CONFIG = {
+  BTech: { name: "BTech", years: [1, 2, 3, 4] },
+  BCA: { name: "BCA", years: [1, 2, 3] },
+  MCA: { name: "MCA", years: [1, 2] },
+  Diploma: { name: "Diploma", years: [1, 2, 3] },
+  BBA: { name: "BBA", years: [1, 2, 3] },
+  MBA: { name: "MBA", years: [1, 2] },
+  MTech: { name: "MTech", years: [1, 2] },
+  BSc: { name: "BSc", years: [1, 2, 3] },
+  BPharma: { name: "BPharma", years: [1, 2, 3, 4] },
+  DPharma: { name: "DPharma", years: [1, 2] }
+};
+
 // --- MAIN APP ---
 
 export default function FarewellApp() {
@@ -502,7 +516,7 @@ export default function FarewellApp() {
   const [pinInput, setPinInput] = useState("");
   const [pinError, setPinError] = useState(false);
   const [adminTab, setAdminTab] = useState("database");
-  const [addForm, setAddForm] = useState({roll_no:"", stud_id:"", name:"", program:"BTech", year:2, section:"A", payment_status:"Paid"});
+  const [addForm, setAddForm] = useState({roll_no:"", stud_id:"", name:"", program:"BTech", year:4, section:"A", payment_status:"Paid"});
   const [dbMsg, setDbMsg] = useState("");
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
 
@@ -764,7 +778,7 @@ export default function FarewellApp() {
       setDbMsg("✨ Added to list!");
     }
 
-    setAddForm({roll_no:"", stud_id:"", name:"", program:"BTech", year:2, section:"A", payment_status:"Paid"});
+    setAddForm({roll_no:"", stud_id:"", name:"", program:"BTech", year:4, section:"A", payment_status:"Paid"});
     setEnrollPhotoFile(null);
     if (enrollPhotoPreview) {
       URL.revokeObjectURL(enrollPhotoPreview);
@@ -797,7 +811,16 @@ export default function FarewellApp() {
   }, []);
   const onAddFormChange = useCallback(e => {
     const { name, value } = e.target;
-    setAddForm(f => ({...f, [name]: name === 'year' ? parseInt(value) : value}));
+    setAddForm(f => {
+      const updated = { ...f, [name]: name === 'year' ? parseInt(value, 10) : value };
+      if (name === 'program') {
+        const availableYears = PROGRAM_CONFIG[value]?.years || [1, 2, 3, 4];
+        if (!availableYears.includes(updated.year)) {
+          updated.year = availableYears[availableYears.length - 1];
+        }
+      }
+      return updated;
+    });
   }, []);
   const onNewAdminFieldChange = useCallback(e => {
     const { name, value } = e.target;
@@ -1026,22 +1049,22 @@ export default function FarewellApp() {
                     <div className="filter-bar">
                       <select name="program" value={filters.program} onChange={onFilterChange}>
                         <option value="All">Program: All</option>
-                        <option value="BTech">BTech</option>
-                        <option value="BCA">BCA</option>
-                        <option value="MCA">MCA</option>
-                        <option value="Diploma">Diploma</option>
+                        {Object.keys(PROGRAM_CONFIG).map(p => (
+                          <option key={p} value={p}>{p}</option>
+                        ))}
                       </select>
                       <select name="year" value={filters.year} onChange={onFilterChange}>
                         <option value="All">Year: All</option>
-                        <option value="2">2</option>
-                        <option value="3">3</option>
+                        <option value="1">1st Year</option>
+                        <option value="2">2nd Year</option>
+                        <option value="3">3rd Year</option>
+                        <option value="4">4th Year</option>
                       </select>
                       <select name="section" value={filters.section} onChange={onFilterChange}>
                         <option value="All">Section: All</option>
-                        <option value="A">A</option>
-                        <option value="B">B</option>
-                        <option value="C">C</option>
-                        <option value="D">D</option>
+                        {["A", "B", "C", "D", "E"].map(sec => (
+                          <option key={sec} value={sec}>Sec {sec}</option>
+                        ))}
                       </select>
                       <select name="sort" value={filters.sort} onChange={onFilterChange} style={{borderColor:`${S.gold}44`}}>
                         <option value="name">A-Z</option>
@@ -1092,9 +1115,30 @@ export default function FarewellApp() {
                    </div>
                    <div style={{marginBottom:20}}><label style={{fontSize:11, color:S.gold, fontWeight:900, display:"block", marginBottom:10}}>FULL NAME</label><input name="name" placeholder="Ex: Mohammad Arshiyan" value={addForm.name} onChange={onAddFormChange}/></div>
                    <div className="filter-bar" style={{marginBottom:20}}>
-                     <div><label style={{fontSize:10, color:S.textMuted, fontWeight:900, display:"block", marginBottom:8}}>PROGRAM</label><select name="program" value={addForm.program} onChange={onAddFormChange}><option value="BTech">BTech</option><option value="BCA">BCA</option><option value="MCA">MCA</option><option value="Diploma">Diploma</option></select></div>
-                     <div><label style={{fontSize:10, color:S.textMuted, fontWeight:900, display:"block", marginBottom:8}}>YEAR</label><select name="year" value={addForm.year} onChange={onAddFormChange}><option value={2}>2</option><option value={3}>3</option></select></div>
-                     <div><label style={{fontSize:10, color:S.textMuted, fontWeight:900, display:"block", marginBottom:8}}>SECTION</label><select name="section" value={addForm.section} onChange={onAddFormChange}><option value="A">A</option><option value="B">B</option><option value="C">C</option><option value="D">D</option></select></div>
+                     <div>
+                       <label style={{fontSize:10, color:S.textMuted, fontWeight:900, display:"block", marginBottom:8}}>PROGRAM</label>
+                       <select name="program" value={addForm.program} onChange={onAddFormChange}>
+                         {Object.keys(PROGRAM_CONFIG).map(p => (
+                           <option key={p} value={p}>{p} ({PROGRAM_CONFIG[p].years.length} yrs)</option>
+                         ))}
+                       </select>
+                     </div>
+                     <div>
+                       <label style={{fontSize:10, color:S.textMuted, fontWeight:900, display:"block", marginBottom:8}}>YEAR</label>
+                       <select name="year" value={addForm.year} onChange={onAddFormChange}>
+                         {(PROGRAM_CONFIG[addForm.program]?.years || [1, 2, 3, 4]).map(yr => (
+                           <option key={yr} value={yr}>Year {yr}</option>
+                         ))}
+                       </select>
+                     </div>
+                     <div>
+                       <label style={{fontSize:10, color:S.textMuted, fontWeight:900, display:"block", marginBottom:8}}>SECTION</label>
+                       <select name="section" value={addForm.section} onChange={onAddFormChange}>
+                         {["A", "B", "C", "D", "E"].map(sec => (
+                           <option key={sec} value={sec}>Sec {sec}</option>
+                         ))}
+                       </select>
+                     </div>
                    </div>
                    <div style={{marginBottom:20}}><label style={{fontSize:11, color:S.gold, fontWeight:900, display:"block", marginBottom:10}}>PAYMENT STATUS</label><select name="payment_status" value={addForm.payment_status} onChange={onAddFormChange}><option value="Paid">PAID</option><option value="Not Paid">UNPAID</option></select></div>
                    <div style={{marginBottom:32}}>
