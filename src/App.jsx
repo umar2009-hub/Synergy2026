@@ -496,6 +496,19 @@ export default function FarewellApp() {
     }
   }, [admins, currentAdmin]);
 
+  useEffect(() => {
+    if (view === "result" && result?.student) {
+      const live = students.find(s => s.id === result.student.id);
+      if (live) {
+        if (live.is_verified && result.status !== "verified") {
+          setResult({ status: "verified", student: live });
+        } else if (!live.is_verified && result.status === "verified") {
+          setResult({ status: "pending", student: live });
+        }
+      }
+    }
+  }, [students, view, result]);
+
   const filteredStudents = useMemo(() => {
     const sInput = search.toLowerCase();
     const rInput = search.toUpperCase();
@@ -577,9 +590,9 @@ export default function FarewellApp() {
     }
 
     if (!student) setResult({ status: "not_found" });
-    else if (student.is_verified) setResult({ status: "already_entered", student });
     else if (student.payment_status !== "Paid") setResult({ status: "not_eligible", student });
-    else setResult({ status: "eligible", student });
+    else if (student.is_verified) setResult({ status: "verified", student });
+    else setResult({ status: "pending", student });
     setView("result");
   }, [form, students]);
 
@@ -725,29 +738,56 @@ export default function FarewellApp() {
 
       {view === "result" && (
         <div key="result" className="view-transition" style={{padding:"80px 24px", textAlign:"center", position:"relative", zIndex:1, maxWidth:640, margin:"0 auto"}}>
-          {result.status === "eligible" && <Confetti />}
-          <div style={{marginBottom:48}} className={result.status === "eligible" ? "pulse" : ""}>
-            {result.status === "eligible" ? <Icon.Check/> : 
-             result.status === "already_entered" ? <Icon.Lock/> :
-             result.status === "not_eligible" ? <Icon.Alert/> : <Icon.Lock color={S.textDim}/>}
+          {result.status === "verified" && <Confetti />}
+          <div style={{marginBottom:48}} className={result.status === "verified" ? "pulse" : ""}>
+            {result.status === "verified" ? <Icon.Check/> : 
+             result.status === "pending" ? <Icon.Alert color={S.warning}/> :
+             result.status === "not_eligible" ? <Icon.Lock color={S.error}/> : <Icon.Lock color={S.textDim}/>}
           </div>
           <h1 className="premium-text" style={{fontSize:48, fontFamily:"'Playfair Display', serif", marginBottom:28, fontWeight:700}}>
-            {result.status === "eligible" ? "Access Granted" : result.status === "already_entered" ? "Entry Denied" : result.status === "not_eligible" ? "Access Restricted" : "Not Found"}
+            {result.status === "verified" ? "Access Granted" : 
+             result.status === "pending" ? "Verification Pending" : 
+             result.status === "not_eligible" ? "Access Restricted" : "Not Found"}
           </h1>
           {result.student && (
             <div style={{marginBottom:48}}>
-              <div style={{fontSize:13, color:S.gold, letterSpacing:"0.3em", fontWeight:900, marginBottom:14}}>GUEST RECOGNIZED</div>
+              <div style={{
+                fontSize:13, 
+                color: result.status === "verified" ? S.success : result.status === "pending" ? S.warning : S.error, 
+                letterSpacing:"0.25em", 
+                fontWeight:900, 
+                marginBottom:14
+              }}>
+                {result.status === "verified" ? "✦ ENTRY CLEARED & VERIFIED" : 
+                 result.status === "pending" ? "⚠️ AWAITING OPERATOR CLEARANCE" : "ACCESS RESTRICTED"}
+              </div>
               <div style={{fontSize:32, fontWeight:800, color:S.text, textTransform:"uppercase", wordBreak:"break-all"}}>{result.student.name}</div>
               <div style={{fontSize:16, color:S.textMuted, marginTop:12, fontWeight:500}}>
                 {(result.student.roll_no || result.student.stud_id)} • {result.student.program} {result.student.year}yr {result.student.section && `Sec ${result.student.section}`}
               </div>
+              {result.status === "verified" && result.student.verified_by && (
+                <div style={{
+                  marginTop:16, 
+                  fontSize:12, 
+                  color:S.success, 
+                  fontWeight:800, 
+                  background:S.successBg, 
+                  display:"inline-block", 
+                  padding:"8px 18px", 
+                  borderRadius:12, 
+                  border:`1px solid ${S.success}44`,
+                  letterSpacing:"0.05em"
+                }}>
+                  AUTHENTICATED BY: {result.student.verified_by} • {result.student.verified_at ? new Date(result.student.verified_at).toLocaleTimeString() : ""}
+                </div>
+              )}
             </div>
           )}
           <div className="glass-card" style={{padding:40, marginBottom:60}}>
             <BorderBeam />
             <p style={{color:S.text, fontSize:17, lineHeight:1.8, fontWeight:400}}>
-              {result.status === "eligible" ? "IDENTITY CLEARANCE: Your digital invitation has been authenticated. Please proceed to the checkpoint and present this screen for final entry logging." : 
-               result.status === "already_entered" ? `SECURITY ALERT: This invitation was already used for entry at ${new Date(result.student.verified_at).toLocaleTimeString()} via ${result.student.verified_by.split('(')[1]?.replace(')','') || 'Main Gate'}. Duplicate entry is prohibited.` :
+              {result.status === "verified" ? "IDENTITY VERIFIED: Your entry pass has been verified and cleared by the gate operator. Please present this screen to security and proceed inside." : 
+               result.status === "pending" ? "NOT CLEARED YET: Your registration is confirmed, but entry has NOT been approved by a gate operator. Please proceed to the gate checkpoint and present your Student ID to an operator to be verified." :
                result.status === "not_found" ? "ARCHIVE MISMATCH: Your credentials do not exist in the guest directory. Please verify your Roll Number or visit the Registration Desk." :
                "INVITATION SUSPENDED: Your digital clearance is on hold due to pending payment. Please resolve this at the Accounts Terminal."}
             </p>
